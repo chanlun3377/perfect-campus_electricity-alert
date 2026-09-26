@@ -22,12 +22,12 @@ jobs:
           SCHOOL_ID: ${{ secrets.SCHOOL_ID }}
           STUDENT_ID: ${{ secrets.STUDENT_ID }}
         run: |
-          echo "=== 开始通过代理抓取原始返回值 ==="
+          echo "=== 开始通过 Vercel 代理抓取 ==="
           curl -s --max-time 20 \
             -d "param=%7B%22cmd%22%3A%22getbindroom%22%2C%22account%22%3A%22${STUDENT_ID}%22%7D" \
             -d "customercode=${SCHOOL_ID}" \
             -d "method=getbindroom" \
-            "https://perfect-campus-electricity-alert.chanlun3377.workers.dev" | head -c 2000
+            "https://campus-proxy.vercel.app/api/proxy" | head -c 2000
           echo ""
           echo "=== 抓取结束 ==="
           
