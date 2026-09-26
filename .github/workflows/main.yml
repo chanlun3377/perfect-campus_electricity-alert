@@ -17,13 +17,16 @@ jobs:
           sudo apt-get update -y  
           sudo apt-get install -y curl jq
 
-      - name: Debug API Response  # 新增这行用于调试
+      - name: Debug API Response
         env:
           SCHOOL_ID: ${{ secrets.SCHOOL_ID }}
           STUDENT_ID: ${{ secrets.STUDENT_ID }}
         run: |
           echo "=== 开始抓取原始返回值 ==="
           curl -s --max-time 15 \
+            -H "User-Agent: Mozilla/5.0 (Linux; Android 13; 2211133C) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Mobile Safari/537.36" \
+            -H "Referer: https://xqh5.17wanxiao.com/" \
+            -H "Content-Type: application/x-www-form-urlencoded" \
             -d "param=%7B%22cmd%22%3A%22getbindroom%22%2C%22account%22%3A%22${STUDENT_ID}%22%7D" \
             -d "customercode=${SCHOOL_ID}" \
             -d "method=getbindroom" \
