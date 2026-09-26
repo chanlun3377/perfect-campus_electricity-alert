@@ -27,7 +27,7 @@ jobs:
             -d "param=%7B%22cmd%22%3A%22getbindroom%22%2C%22account%22%3A%22${STUDENT_ID}%22%7D" \
             -d "customercode=${SCHOOL_ID}" \
             -d "method=getbindroom" \
-            "https://campus-proxy.vercel.app/api/proxy" | head -c 2000
+            "https://campus-proxy.vercel.app" | head -c 2000
           echo ""
           echo "=== 抓取结束 ==="
           
