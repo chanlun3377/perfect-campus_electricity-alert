@@ -8,46 +8,59 @@
 
 body=$(curl -sd "param=%7B%22cmd%22%3A%22getbindroom%22%2C%22account%22%3A%22${STUDENT_ID}%22%7D&customercode=${SCHOOL_ID}&method=getbindroom" "https://xqh5.17wanxiao.com/smartWaterAndElectricityService/SWAEServlet" | jq .body) # 从完美校园获取信息
 
-body=$(echo $(echo $(echo $body | sed 's/"{/{/g') | sed 's/}"/}/g') | sed 's/\\"/"/g')  # 手动整理 json 格式
-roomAmount=$(echo $body | jq '.roomlist|length')    # 获取绑定的房间数量
+# --- 替换开始：使用 jq 原生解析，避免 sed 带来的灾难 ---
+# 使用 jq 的 fromjson 直接把 body 里的转义 JSON 解析为真正的 JSON，比 sed 安全一万倍
+PARSED_JSON=$(echo "$body" | jq -r 'fromjson' 2>/dev/null)
 
-# 判断是否只绑定一个宿舍
-singleRoom=false
-if [[ roomAmount -eq 0 ]]; then
-    roomAmount=1
-    singleRoom=true
+if [ $? -ne 0 ] || [ -z "$PARSED_JSON" ]; then
+    echo "❌ 解析失败，API 返回格式可能变了"
+    exit 1
 fi
 
-# 依次提取 json 中的数据
-for((i=0;i<$roomAmount;i++))    
+# 统一归一化为数组：不管有没有 roomlist，都转成数组处理
+ROOM_ARRAY=$(echo "$PARSED_JSON" | jq -c 'if .roomlist then .roomlist else [.] end')
+roomAmount=$(echo "$ROOM_ARRAY" | jq 'length')
+
+# 遍历数组
+for ((i=0; i<$roomAmount; i++))
 do
-    if [ "$singleRoom" == "true" ];then   # 处理没有roomlist的情况
-        roomName[$i]=$(echo $(echo $body | jq .roomfullname) | sed 's/"//g')   # 房间名
-    	roomUse[$i]=$(echo $(echo $body | jq .detaillist[0].use) | sed 's/"//g')   # 已使用电量
-    	roomOdd[$i]=$(echo $(echo $body | jq .detaillist[0].odd) | sed 's/"//g')   # 剩余电量
-    	roomStatusCode[$i]=$(echo $(echo $body | jq .detaillist[0].status) | sed 's/"//g') # 状态码
-    else
-    	roomName[$i]=$(echo $(echo $body | jq .roomlist[$i].roomfullname) | sed 's/"//g')
-    	roomUse[$i]=$(echo $(echo $body | jq .roomlist[$i].detaillist[0].use) | sed 's/"//g')
-    	roomOdd[$i]=$(echo $(echo $body | jq .roomlist[$i].detaillist[0].odd) | sed 's/"//g')
-    	roomStatusCode[$i]=$(echo $(echo $body | jq .roomlist[$i].detaillist[0].status) | sed 's/"//g')
+    # 用 jq 精准提取，并进行默认值处理，防止空数据触发误报
+    roomName[$i]=$(echo "$ROOM_ARRAY" | jq -r ".[$i].roomfullname // \"未知房间\"" | sed 's/公寓/宿舍/g')
+    roomUse[$i]=$(echo "$ROOM_ARRAY" | jq -r ".[$i].detaillist[0].use // \"0\"")
+    roomOdd[$i]=$(echo "$ROOM_ARRAY" | jq -r ".[$i].detaillist[0].odd // \"0\"")
+    roomStatusCode[$i]=$(echo "$ROOM_ARRAY" | jq -r ".[$i].detaillist[0].status // \"0\"")
+    
+    # 判断电量是否为空，如果为空则跳过这个房间，不触发告警
+    if [ "$roomOdd[$i]" == "0" ] || [ -z "$roomOdd[$i]" ]; then
+        continue
     fi
-	# 将状态码转换为字符
-	if [ ${roomStatusCode[$i]} -eq 1 ];then
-            roomStatus[$i]="一般送电"
-    	else
-            roomStatus[$i]="一般断电"
-	fi
+
+    # 状态码转换
+    if [ "${roomStatusCode[$i]}" -eq 1 ]; then
+        roomStatus[$i]="一般送电"
+    else
+        roomStatus[$i]="一般断电"
+    fi
 done
+# --- 替换结束 ---
 
+# --- 替换消息拼接与判断逻辑 ---
 msg="[电费不足提醒]目前与您的学号 ${STUDENT_ID:0:4}****** 绑定的以下房间，剩余电量不足 ${ALERT_THRESHOLD} 度，请及时缴纳电费哦~"
+msgFlag=0
 
-msgFlag=0   # 是否需要推送消息标记
-for((i=0;i<$roomAmount;i++))
+for((i=0; i<$roomAmount; i++))
 do
-    if [ $(printf "%.0f" ${roomOdd[$i]}) -lt ${ALERT_THRESHOLD} ];then  #判断是否低于阈值
+    # 过滤掉那些没有取到电量（即空值或 0）的虚假房间
+    if [ -z "${roomOdd[$i]}" ] || [ "${roomOdd[$i]}" == "0" ]; then
+        continue
+    fi
+
+    # 使用 bc 进行浮点数精确比较，避免四舍五入带来的漏报
+    IS_LOW=$(echo "${roomOdd[$i]} < ${ALERT_THRESHOLD}" | bc)
+    
+    if [ "$IS_LOW" -eq 1 ]; then
         msgFlag=1
-        msg="$msg  [$(echo ${roomName[$i]} | sed 's/公寓/宿舍/g')]剩余${roomOdd[$i]}度电"
+        msg="$msg 【${roomName[$i]}】剩余${roomOdd[$i]}度电"
     fi
 done
 
