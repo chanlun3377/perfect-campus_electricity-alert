@@ -17,6 +17,20 @@ jobs:
           sudo apt-get update -y  
           sudo apt-get install -y curl jq
 
+      - name: Debug API Response  # 新增这行用于调试
+        env:
+          SCHOOL_ID: ${{ secrets.SCHOOL_ID }}
+          STUDENT_ID: ${{ secrets.STUDENT_ID }}
+        run: |
+          echo "=== 开始抓取原始返回值 ==="
+          curl -s --max-time 15 \
+            -d "param=%7B%22cmd%22%3A%22getbindroom%22%2C%22account%22%3A%22${STUDENT_ID}%22%7D" \
+            -d "customercode=${SCHOOL_ID}" \
+            -d "method=getbindroom" \
+            "https://xqh5.17wanxiao.com/smartWaterAndElectricityService/SWAEServlet" | head -c 2000
+          echo ""
+          echo "=== 抓取结束 ==="
+          
       - name: Run main.sh
         env:
           QMSG_KEY: ${{ secrets.QMSG_KEY }}
